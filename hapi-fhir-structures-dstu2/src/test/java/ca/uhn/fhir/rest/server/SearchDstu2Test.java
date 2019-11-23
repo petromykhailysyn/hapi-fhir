@@ -13,6 +13,7 @@ import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.api.server.IBundleProvider;
 import ca.uhn.fhir.rest.param.*;
+import ca.uhn.fhir.test.utilities.JettyUtil;
 import ca.uhn.fhir.util.TestUtil;
 import com.google.common.base.Charsets;
 import org.apache.commons.io.IOUtils;
@@ -38,6 +39,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import javax.annotation.Nonnull;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,10 +48,6 @@ import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.*;
-
-import ca.uhn.fhir.test.utilities.JettyUtil;
-
-import javax.annotation.Nonnull;
 
 public class SearchDstu2Test {
 
@@ -468,6 +466,18 @@ public class SearchDstu2Test {
 		assertEquals("stringParam:false:false", ourLastMethod);
 	}
 
+	@Test
+	public void testSearchByLastUpdated() throws Exception {
+		HttpGet httpGet = new HttpGet("http://localhost:" + ourPort + "/Patient?searchMethodBindingIssue=aaa&_lastUpdated=ge2019-11-15T12%3A16%3A15.066%2B01%3A00&_lastUpdated=le2019-11-15T13%3A16%3A14.066%2B01%3A00&_format=json");
+		HttpResponse status = ourClient.execute(httpGet);
+		String responseContent = IOUtils.toString(status.getEntity().getContent(), Charset.defaultCharset());
+		IOUtils.closeQuietly(status.getEntity().getContent());
+		ourLog.info(responseContent);
+		assertEquals(200, status.getStatusLine().getStatusCode());
+
+		assertEquals("searchMethodBindingIssueWithLastUpdated", ourLastMethod);
+	}
+
 
 	@Test
 	public void testSearchWhitelist01Failing() throws Exception {
@@ -502,12 +512,13 @@ public class SearchDstu2Test {
 
 		DummyPatientResourceProvider patientProvider = new DummyPatientResourceProvider();
 		DummyPatientResourceNoIdProvider patientResourceNoIdProviderProvider = new DummyPatientResourceNoIdProvider();
+		DummyPatientResourceMethodBindingIssueProvider patientResourceMethodBindingIssueProvider = new DummyPatientResourceMethodBindingIssueProvider();
 
 		ServletHandler proxyHandler = new ServletHandler();
 		ourServlet = new RestfulServer(ourCtx);
 		ourServlet.setPagingProvider(new FifoMemoryPagingProvider(10));
 		ourServlet.setDefaultResponseEncoding(EncodingEnum.XML);
-		ourServlet.setResourceProviders(patientResourceNoIdProviderProvider, patientProvider);
+		ourServlet.setResourceProviders(patientResourceNoIdProviderProvider, patientProvider, patientResourceMethodBindingIssueProvider);
 
 		ServletHolder servletHolder = new ServletHolder(ourServlet);
 		proxyHandler.addServletWithMapping(servletHolder, "/*");
@@ -520,6 +531,33 @@ public class SearchDstu2Test {
 		builder.setConnectionManager(connectionManager);
 		ourClient = builder.build();
 
+	}
+
+	public static class DummyPatientResourceMethodBindingIssueProvider implements IResourceProvider {
+
+		@Override
+		public Class<? extends IResource> getResourceType() {
+			return Patient.class;
+		}
+
+		//@formatter:off
+		@Search()
+		public List<Patient> searchMethodBindingIssue(
+			@RequiredParam(name = "searchMethodBindingIssue") StringParam stringParam) {
+			ourLastMethod = "searchMethodBindingIssueNoLastUpdated";
+			return Collections.emptyList();
+		}
+		//@formatter:on
+
+		//@formatter:off
+		@Search()
+		public List<Patient> searchByLastUpdated(
+			@RequiredParam(name = "searchMethodBindingIssue") StringParam stringParam,
+			@RequiredParam(name = Constants.PARAM_LASTUPDATED) DateRangeParam dateRangeParam) {
+			ourLastMethod = "searchMethodBindingIssueWithLastUpdated";
+			return Collections.emptyList();
+		}
+		//@formatter:on
 	}
 
 	public static class DummyPatientResourceNoIdProvider implements IResourceProvider {
